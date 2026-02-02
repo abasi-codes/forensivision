@@ -15,6 +15,7 @@ from src.models.analysis import (
     VideoAnalysisRequest,
 )
 from src.services.analysis_service import analysis_service
+from src.services.video_service import video_service, VideoValidationError
 
 router = APIRouter()
 
@@ -78,13 +79,36 @@ async def analyze_video(
     """
     Analyze a video for deepfakes and AI manipulation.
 
+    Supports YouTube URLs for video analysis:
+    - source.type: "youtube"
+    - source.url: YouTube video URL
+
     Video analysis includes:
-    - Face swap detection
-    - Lip sync analysis
-    - Audio deepfake detection
+    - Frame-by-frame AI detection
     - Temporal consistency analysis
-    - Frame-by-frame manipulation detection
+    - Suspicious segment identification
+
+    Limits:
+    - Maximum video duration: 5 minutes
+    - Maximum resolution: 720p
+    - Rate limit: 10 videos/hour/user
     """
+    # Validate YouTube URL if source type is youtube
+    source_type = request.source.get("type")
+    if source_type == "youtube":
+        youtube_url = request.source.get("url")
+        try:
+            video_id = video_service.validate_youtube_url(youtube_url)
+            # Normalize the URL for consistent storage
+            normalized_url = video_service.get_youtube_url_from_id(video_id)
+            request.source["url"] = normalized_url
+            request.source["video_id"] = video_id
+        except VideoValidationError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": e.code, "message": e.message},
+            )
+
     webhook_url = None
     if request.webhook:
         webhook_url = str(request.webhook.url)
@@ -106,7 +130,7 @@ async def analyze_video(
             "attributes": {
                 "status": analysis.status.value,
                 "progress": analysis.progress,
-                "current_stage": analysis.current_stage,
+                "current_stage": analysis.current_stage or "queued",
                 "created_at": analysis.created_at.isoformat(),
             },
             "links": {
@@ -207,7 +231,7 @@ async def get_analysis(
     if analysis.status == AnalysisStatus.COMPLETED:
         result = await analysis_service.get_analysis_result(analysis_id)
         if result:
-            response_data["attributes"]["results"] = {
+            results_data = {
                 "verdict": result.verdict.value,
                 "confidence": result.confidence,
                 "risk_level": result.risk_level.value,
@@ -216,6 +240,10 @@ async def get_analysis(
                 "ensemble_score": result.ensemble_score,
                 "heatmap_url": result.heatmap_url,
             }
+            # Include video_analysis for video types
+            if result.video_analysis:
+                results_data["video_analysis"] = result.video_analysis
+            response_data["attributes"]["results"] = results_data
         response_data["attributes"]["completed_at"] = (
             analysis.processing_completed_at.isoformat()
             if analysis.processing_completed_at

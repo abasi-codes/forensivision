@@ -12,6 +12,7 @@ from src.config import settings
 from src.detectors.image_detector import ImageDetector
 from src.storage import S3Storage
 from src.database import Database
+from src.workers.video_worker import VideoWorker
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,6 +28,7 @@ class MLWorker:
         self.connection: Optional[aio_pika.Connection] = None
         self.channel: Optional[aio_pika.Channel] = None
         self.image_detector: Optional[ImageDetector] = None
+        self.video_worker: Optional[VideoWorker] = None
         self.storage: Optional[S3Storage] = None
         self.db: Optional[Database] = None
         self.running = True
@@ -43,6 +45,9 @@ class MLWorker:
         # Initialize detectors
         self.image_detector = ImageDetector()
 
+        # Initialize video worker
+        self.video_worker = VideoWorker(self.db, self.image_detector)
+
         # Connect to RabbitMQ
         self.connection = await aio_pika.connect_robust(settings.rabbitmq_url)
         self.channel = await self.connection.channel()
@@ -50,6 +55,7 @@ class MLWorker:
 
         # Start consuming from queues
         await self._consume_queue(settings.queue_image_analysis, self._process_image_job)
+        await self._consume_queue(settings.queue_video_analysis, self._process_video_job)
 
         logger.info(f"ML Worker {settings.worker_id} started successfully")
 
@@ -140,6 +146,10 @@ class MLWorker:
                     )
                 except Exception:
                     pass
+
+    async def _process_video_job(self, message: IncomingMessage):
+        """Process a video analysis job."""
+        await self.video_worker.process_job(message)
 
     async def _update_status(
         self,

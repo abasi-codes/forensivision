@@ -246,6 +246,11 @@ class AnalysisService:
         if not row:
             return None
 
+        # Parse video_analysis if present
+        video_analysis = None
+        if row.get("video_analysis"):
+            video_analysis = json.loads(row["video_analysis"]) if isinstance(row["video_analysis"], str) else row["video_analysis"]
+
         return AnalysisResult(
             verdict=row["verdict"],
             confidence=float(row["confidence"]),
@@ -254,6 +259,7 @@ class AnalysisService:
             detections=json.loads(row["detections"]) if row["detections"] else [],
             ensemble_score=float(row["ensemble_score"]) if row["ensemble_score"] else None,
             heatmap_url=row["heatmap_url"],
+            video_analysis=video_analysis,
         )
 
     async def list_analyses(

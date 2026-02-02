@@ -8,16 +8,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up Python
-RUN ln -sf /usr/bin/python3.11 /usr/bin/python
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3
 
 WORKDIR /app
 
 # Install Python dependencies
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir .
+RUN python -m pip install --no-cache-dir .
 
 # Copy application code
 COPY src/ ./src/

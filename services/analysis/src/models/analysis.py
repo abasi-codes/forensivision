@@ -129,6 +129,7 @@ class AnalysisResult(BaseModel):
     ensemble_score: Optional[float] = None
     heatmap_url: Optional[str] = None
     metadata: Optional[MetadataAnalysis] = None
+    video_analysis: Optional[Dict[str, Any]] = None
 
 
 class AnalysisStage(BaseModel):
