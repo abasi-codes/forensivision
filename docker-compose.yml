@@ -1,0 +1,176 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: forensivision-postgres
+    environment:
+      POSTGRES_USER: forensivision
+      POSTGRES_PASSWORD: forensivision_dev
+      POSTGRES_DB: forensivision
+    ports:
+      - "5440:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forensivision"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: forensivision-redis
+    ports:
+      - "6390:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ Message Queue
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: forensivision-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: forensivision
+      RABBITMQ_DEFAULT_PASS: forensivision_dev
+    ports:
+      - "5680:5672"
+      - "15680:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # MinIO (S3-compatible storage)
+  minio:
+    image: minio/minio:latest
+    container_name: forensivision-minio
+    environment:
+      MINIO_ROOT_USER: forensivision
+      MINIO_ROOT_PASSWORD: forensivision_dev
+    command: server /data --console-address ":9001"
+    ports:
+      - "9010:9000"
+      - "9011:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # Auth Service (Go)
+  auth-service:
+    build:
+      context: ./services/auth
+      dockerfile: Dockerfile
+    container_name: forensivision-auth
+    environment:
+      DATABASE_URL: postgres://forensivision:forensivision_dev@postgres:5432/forensivision?sslmode=disable
+      REDIS_URL: redis:6379
+      JWT_SECRET: dev-jwt-secret-change-in-production
+      PORT: 8080
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles:
+      - services
+
+  # Analysis Service (Python)
+  analysis-service:
+    build:
+      context: ./services/analysis
+      dockerfile: Dockerfile
+    container_name: forensivision-analysis
+    environment:
+      DATABASE_URL: postgres://forensivision:forensivision_dev@postgres:5432/forensivision?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://forensivision:forensivision_dev@rabbitmq:5672/
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: forensivision
+      S3_SECRET_KEY: forensivision_dev
+      PORT: 8080
+    ports:
+      - "8082:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    profiles:
+      - services
+
+  # Storage Service (Go)
+  storage-service:
+    build:
+      context: ./services/storage
+      dockerfile: Dockerfile
+    container_name: forensivision-storage
+    environment:
+      DATABASE_URL: postgres://forensivision:forensivision_dev@postgres:5432/forensivision?sslmode=disable
+      REDIS_URL: redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: forensivision
+      S3_SECRET_KEY: forensivision_dev
+      PORT: 8080
+    ports:
+      - "8083:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    profiles:
+      - services
+
+  # ML Worker (Python)
+  ml-worker:
+    build:
+      context: ./services/ml-worker
+      dockerfile: Dockerfile
+    container_name: forensivision-ml-worker
+    environment:
+      RABBITMQ_URL: amqp://forensivision:forensivision_dev@rabbitmq:5672/
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: forensivision
+      S3_SECRET_KEY: forensivision_dev
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles:
+      - workers
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:
+
+networks:
+  default:
+    name: forensivision-network

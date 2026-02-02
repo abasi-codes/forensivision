@@ -1,0 +1,80 @@
+# Dependencies
+node_modules/
+vendor/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+*.egg-info/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Testing
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+.nyc_output/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Binaries
+bin/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!example.tfvars
+
+# Docker
+.docker/
+
+# Secrets (never commit these)
+*.pem
+*.key
+secrets/
+credentials/
+
+# ML models (too large for git)
+models/*.pt
+models/*.onnx
+models/*.h5
+!models/.gitkeep
+
+# Uploaded files
+uploads/
+temp/
+
+# Database
+*.db
+*.sqlite
