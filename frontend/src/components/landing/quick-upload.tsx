@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, FileImage, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn, formatBytes, formatConfidence, formatVerdict, getVerdictColor } from '@/lib/utils';
+import { cn, formatBytes, formatConfidence, formatVerdict, getVerdictColor, hashFile, hashToSeed, createSeededRandom } from '@/lib/utils';
 
 type AnalysisState = 'idle' | 'uploading' | 'processing' | 'complete' | 'error';
 
@@ -36,23 +36,28 @@ export function QuickUpload() {
 
   const analyzeFile = async (file: File) => {
     setState('uploading');
-
-    // Simulate upload delay
     await new Promise((r) => setTimeout(r, 800));
 
     setState('processing');
 
+    // Hash the image for deterministic results
+    const hash = await hashFile(file);
+    const seed = hashToSeed(hash);
+    const random = createSeededRandom(seed);
+
     // Simulate processing delay
     await new Promise((r) => setTimeout(r, 1500));
 
-    // Generate mock result
+    // Generate deterministic result based on image hash
+    const verdictRoll = random();
+    const isAiGenerated = verdictRoll > 0.5;
+
     const mockResult: MockResult = {
-      verdict: Math.random() > 0.5 ? 'ai_generated' : 'authentic',
-      confidence: 0.7 + Math.random() * 0.25,
-      summary:
-        Math.random() > 0.5
-          ? 'This image shows strong indicators of AI generation, likely from a diffusion-based model.'
-          : 'This image appears to be an authentic photograph with no signs of AI generation.',
+      verdict: isAiGenerated ? 'ai_generated' : 'authentic',
+      confidence: 0.75 + random() * 0.2, // 75-95% - deterministic from hash
+      summary: isAiGenerated
+        ? 'This image shows strong indicators of AI generation, likely from a diffusion-based model.'
+        : 'This image appears to be an authentic photograph with no signs of AI generation.',
     };
 
     setResult(mockResult);

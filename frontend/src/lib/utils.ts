@@ -60,3 +60,35 @@ export function formatVerdict(verdict: string): string {
   };
   return labels[verdict] || verdict;
 }
+
+// ============ Image Hashing & Deterministic Analysis ============
+
+/**
+ * Compute SHA-256 hash of a file using Web Crypto API
+ */
+export async function hashFile(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Convert hex hash to numeric seed (first 8 chars = 32 bits)
+ */
+export function hashToSeed(hash: string): number {
+  return parseInt(hash.slice(0, 8), 16);
+}
+
+/**
+ * Mulberry32 PRNG - deterministic random from seed
+ * Returns a function that generates numbers 0-1
+ */
+export function createSeededRandom(seed: number): () => number {
+  return function() {
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
