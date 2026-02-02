@@ -71,6 +71,10 @@ models/*.onnx
 models/*.h5
 !models/.gitkeep
 
+# Frontend AI detector model and WASM files (downloaded at build time)
+frontend/public/models/
+frontend/public/onnx/
+
 # Uploaded files
 uploads/
 temp/

@@ -2,26 +2,57 @@
 
 import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, FileImage, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, FileImage, Loader2, CheckCircle, AlertCircle, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn, formatBytes, formatConfidence, formatVerdict, getVerdictColor, hashFile, hashToSeed, createSeededRandom } from '@/lib/utils';
+import { Progress } from '@/components/ui/progress';
+import { cn, formatBytes, formatConfidence, formatVerdict, getVerdictColor } from '@/lib/utils';
+import { useAIDetector } from '@/lib/hooks/use-ai-detector';
+import { DetectionResult } from '@/lib/ai-detector';
 
-type AnalysisState = 'idle' | 'uploading' | 'processing' | 'complete' | 'error';
+type AnalysisState = 'idle' | 'loading-model' | 'processing' | 'complete' | 'error';
 
-interface MockResult {
+interface AnalysisResult {
   verdict: string;
   confidence: number;
   summary: string;
+}
+
+function getVerdictSummary(result: DetectionResult): string {
+  switch (result.verdict) {
+    case 'ai_generated':
+      return `This image shows strong indicators of AI generation (${(result.aiProbability * 100).toFixed(1)}% AI probability). It was likely created using a diffusion-based model like Stable Diffusion, DALL-E, or Midjourney.`;
+    case 'authentic':
+      return `This image appears to be an authentic photograph (${(result.authenticProbability * 100).toFixed(1)}% authentic probability). No significant signs of AI generation were detected.`;
+    case 'inconclusive':
+      return `The analysis is inconclusive (${(result.aiProbability * 100).toFixed(1)}% AI probability). The image may be heavily edited, compressed, or have characteristics that make classification difficult.`;
+    default:
+      return 'Analysis complete.';
+  }
+}
+
+function getVerdictIcon(verdict: string) {
+  switch (verdict) {
+    case 'authentic':
+      return <CheckCircle className="h-5 w-5 text-authentic" />;
+    case 'ai_generated':
+      return <AlertCircle className="h-5 w-5 text-ai" />;
+    case 'inconclusive':
+      return <HelpCircle className="h-5 w-5 text-yellow-500" />;
+    default:
+      return null;
+  }
 }
 
 export function QuickUpload() {
   const [state, setState] = useState<AnalysisState>('idle');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [result, setResult] = useState<MockResult | null>(null);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
+  const { status: detectorStatus, detect, loadModel } = useAIDetector();
+
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (!file) return;
 
@@ -30,43 +61,44 @@ export function QuickUpload() {
     setError(null);
     setResult(null);
 
-    // Simulate analysis
-    analyzeFile(file);
+    // Run analysis
+    await analyzeFile(file);
   }, []);
 
   const analyzeFile = async (file: File) => {
-    setState('uploading');
-    await new Promise((r) => setTimeout(r, 800));
+    try {
+      // Load model if not already loaded
+      if (!detectorStatus.isLoaded) {
+        setState('loading-model');
+        await loadModel();
+      }
 
-    setState('processing');
+      setState('processing');
 
-    // Hash the image for deterministic results
-    const hash = await hashFile(file);
-    const seed = hashToSeed(hash);
-    const random = createSeededRandom(seed);
+      // Run actual AI detection
+      const detectionResult = await detect(file);
 
-    // Simulate processing delay
-    await new Promise((r) => setTimeout(r, 1500));
+      const analysisResult: AnalysisResult = {
+        verdict: detectionResult.verdict,
+        confidence: detectionResult.confidence,
+        summary: getVerdictSummary(detectionResult),
+      };
 
-    // Generate deterministic result based on image hash
-    const verdictRoll = random();
-    const isAiGenerated = verdictRoll > 0.5;
-
-    const mockResult: MockResult = {
-      verdict: isAiGenerated ? 'ai_generated' : 'authentic',
-      confidence: 0.75 + random() * 0.2, // 75-95% - deterministic from hash
-      summary: isAiGenerated
-        ? 'This image shows strong indicators of AI generation, likely from a diffusion-based model.'
-        : 'This image appears to be an authentic photograph with no signs of AI generation.',
-    };
-
-    setResult(mockResult);
-    setState('complete');
+      setResult(analysisResult);
+      setState('complete');
+    } catch (err) {
+      console.error('Analysis failed:', err);
+      setError(err instanceof Error ? err.message : 'Analysis failed. Please try again.');
+      setState('error');
+    }
   };
 
   const reset = () => {
     setState('idle');
     setFile(null);
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
     setPreview(null);
     setResult(null);
     setError(null);
@@ -113,7 +145,32 @@ export function QuickUpload() {
         </div>
       )}
 
-      {(state === 'uploading' || state === 'processing') && (
+      {state === 'loading-model' && (
+        <div className="text-center py-8">
+          {preview && (
+            <div className="mb-4 relative inline-block">
+              <img
+                src={preview}
+                alt="Preview"
+                className="w-32 h-32 object-cover rounded-lg mx-auto opacity-50"
+              />
+            </div>
+          )}
+          <Loader2 className="h-8 w-8 mx-auto mb-4 text-primary animate-spin" />
+          <p className="text-sm font-medium">Loading AI model...</p>
+          <p className="text-xs text-muted-foreground mt-1 mb-3">
+            First-time setup (~15-20MB download)
+          </p>
+          <div className="max-w-xs mx-auto">
+            <Progress value={detectorStatus.loadProgress} className="h-2" />
+            <p className="text-xs text-muted-foreground mt-1">
+              {detectorStatus.loadProgress}%
+            </p>
+          </div>
+        </div>
+      )}
+
+      {state === 'processing' && (
         <div className="text-center py-8">
           {preview && (
             <div className="mb-4 relative inline-block">
@@ -127,9 +184,7 @@ export function QuickUpload() {
               </div>
             </div>
           )}
-          <p className="text-sm font-medium">
-            {state === 'uploading' ? 'Uploading...' : 'Analyzing...'}
-          </p>
+          <p className="text-sm font-medium">Analyzing image...</p>
           <p className="text-xs text-muted-foreground mt-1">
             {file?.name} ({formatBytes(file?.size || 0)})
           </p>
@@ -148,11 +203,7 @@ export function QuickUpload() {
             )}
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
-                {result.verdict === 'authentic' ? (
-                  <CheckCircle className="h-5 w-5 text-authentic" />
-                ) : (
-                  <AlertCircle className="h-5 w-5 text-ai" />
-                )}
+                {getVerdictIcon(result.verdict)}
                 <span className={cn('font-semibold', getVerdictColor(result.verdict))}>
                   {formatVerdict(result.verdict)}
                 </span>
@@ -183,8 +234,9 @@ export function QuickUpload() {
       {state === 'error' && (
         <div className="text-center py-8">
           <AlertCircle className="h-10 w-10 mx-auto mb-4 text-destructive" />
-          <p className="text-sm font-medium text-destructive">{error}</p>
-          <Button onClick={reset} variant="outline" className="mt-4">
+          <p className="text-sm font-medium text-destructive mb-2">Analysis Failed</p>
+          <p className="text-xs text-muted-foreground mb-4">{error}</p>
+          <Button onClick={reset} variant="outline">
             Try Again
           </Button>
         </div>

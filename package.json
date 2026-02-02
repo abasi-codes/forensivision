@@ -18,7 +18,8 @@
     "db:seed": "cd services/auth && go run cmd/seed/main.go"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "playwright": "^1.58.1"
   },
   "engines": {
     "node": ">=20.0.0",

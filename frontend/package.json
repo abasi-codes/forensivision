@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postinstall": "mkdir -p public/onnx && (cp ../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded*.wasm ../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded*.mjs ../node_modules/onnxruntime-web/dist/ort.min.js public/onnx/ 2>/dev/null || cp node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded*.wasm node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded*.mjs node_modules/onnxruntime-web/dist/ort.min.js public/onnx/ 2>/dev/null || true)"
   },
   "dependencies": {
     "next": "14.2.0",
@@ -29,7 +30,8 @@
     "@radix-ui/react-tabs": "^1.0.4",
     "@radix-ui/react-toast": "^1.1.5",
     "@radix-ui/react-progress": "^1.0.3",
-    "react-dropzone": "^14.2.3"
+    "react-dropzone": "^14.2.3",
+    "onnxruntime-web": "^1.17.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
