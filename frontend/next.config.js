@@ -22,25 +22,6 @@ const nextConfig = {
       },
     ];
   },
-  async headers() {
-    return [
-      {
-        // Apply these headers to all routes
-        source: '/:path*',
-        headers: [
-          // Required for SharedArrayBuffer (used by ONNX Runtime WASM threads)
-          {
-            key: 'Cross-Origin-Opener-Policy',
-            value: 'same-origin',
-          },
-          {
-            key: 'Cross-Origin-Embedder-Policy',
-            value: 'require-corp',
-          },
-        ],
-      },
-    ];
-  },
   webpack: (config, { isServer }) => {
     // Exclude onnxruntime-web from bundling - we load it via script tag
     config.externals = [
