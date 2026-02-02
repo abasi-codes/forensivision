@@ -5,8 +5,9 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Shield, Loader2, Check } from 'lucide-react';
+import { Loader2, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Logo } from '@/components/ui/logo';
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -63,7 +64,7 @@ export default function RegisterPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2">
-            <Shield className="h-10 w-10 text-primary" />
+            <Logo size={40} />
             <span className="text-2xl font-bold">ForensiVision</span>
           </Link>
           <h1 className="mt-6 text-2xl font-bold">Create your account</h1>

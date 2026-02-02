@@ -4,7 +4,6 @@ import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { useDropzone } from 'react-dropzone';
 import {
-  Shield,
   Upload,
   Key,
   BarChart3,
@@ -16,6 +15,7 @@ import {
   FileVideo,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Logo } from '@/components/ui/logo';
 import { cn, formatBytes } from '@/lib/utils';
 
 type UploadState = 'idle' | 'uploading' | 'processing' | 'complete' | 'error';
@@ -100,7 +100,7 @@ export default function AnalyzePage() {
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 h-full w-64 bg-white dark:bg-slate-900 border-r p-4 flex flex-col">
         <Link href="/dashboard" className="flex items-center gap-2 mb-8">
-          <Shield className="h-8 w-8 text-primary" />
+          <Logo size={32} />
           <span className="text-xl font-bold">ForensiVision</span>
         </Link>
 

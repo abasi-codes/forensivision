@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRight, Shield, Zap, Eye, FileCheck, Upload } from 'lucide-react';
+import { ArrowRight, Zap, Eye, FileCheck, Upload, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Logo } from '@/components/ui/logo';
 import { QuickUpload } from '@/components/landing/quick-upload';
 
 export default function HomePage() {
@@ -13,7 +14,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
             <div className="flex items-center gap-2">
-              <Shield className="h-8 w-8 text-primary" />
+              <Logo size={32} />
               <span className="text-xl font-bold">ForensiVision</span>
             </div>
             <div className="hidden md:flex items-center gap-8">
@@ -91,7 +92,7 @@ export default function HomePage() {
 
           <div className="grid md:grid-cols-3 gap-8">
             <FeatureCard
-              icon={<Shield className="h-6 w-6" />}
+              icon={<ShieldCheck className="h-6 w-6" />}
               title="97%+ Accuracy"
               description="Multi-model ensemble approach combining CNNs, Vision Transformers, and frequency analysis for industry-leading detection rates."
             />
@@ -153,7 +154,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-2">
-              <Shield className="h-6 w-6 text-primary" />
+              <Logo size={24} />
               <span className="font-semibold">ForensiVision</span>
             </div>
             <div className="flex gap-8 text-sm text-muted-foreground">
