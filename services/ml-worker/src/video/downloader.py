@@ -75,9 +75,13 @@ class VideoDownloader:
         # Check duration limit
         duration = info.get("duration", 0)
         if duration > self.MAX_DURATION_SECONDS:
+            if self.MAX_DURATION_SECONDS < 60:
+                limit_str = f"{self.MAX_DURATION_SECONDS} second"
+            else:
+                limit_str = f"{self.MAX_DURATION_SECONDS // 60} minute"
             raise DownloadError(
                 code="VIDEO_TOO_LONG",
-                message=f"Video exceeds {self.MAX_DURATION_SECONDS // 60} minute limit",
+                message=f"Video exceeds {limit_str} limit",
             )
 
         # Generate output path
