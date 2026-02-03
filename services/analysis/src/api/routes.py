@@ -1,20 +1,22 @@
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
 from src.api.auth import get_current_user, UserContext
+from src.api.rate_limit import check_demo_rate_limit, get_client_ip
 from src.models.analysis import (
     AnalysisResponse,
     AnalysisStatus,
     AnalysisType,
     BatchAnalysisRequest,
     BatchAnalysisResponse,
+    DemoVideoAnalysisRequest,
     FileInfo,
     ImageAnalysisRequest,
     VideoAnalysisRequest,
 )
-from src.services.analysis_service import analysis_service
+from src.services.analysis_service import analysis_service, DEMO_USER_ID
 from src.services.video_service import video_service, VideoValidationError
 
 router = APIRouter()
@@ -387,3 +389,118 @@ async def get_result(
             },
         },
     }
+
+
+# ============================================================================
+# Demo Endpoints (No Authentication Required)
+# ============================================================================
+
+
+@router.post("/demo/analyze/video", response_model=dict, status_code=status.HTTP_202_ACCEPTED)
+async def demo_analyze_video(
+    request: DemoVideoAnalysisRequest,
+    http_request: Request,
+):
+    """
+    Analyze a YouTube video for AI-generated content (demo mode).
+
+    No authentication required. Rate limited to 3 requests per hour per IP.
+    Maximum video duration: 20 seconds.
+    """
+    # Get client IP for rate limiting
+    client_ip = await get_client_ip(http_request)
+
+    # Check rate limit
+    await check_demo_rate_limit(client_ip)
+
+    # Validate YouTube URL
+    try:
+        video_id = video_service.validate_youtube_url(request.youtube_url)
+        normalized_url = video_service.get_youtube_url_from_id(video_id)
+    except VideoValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": e.code, "message": e.message},
+        )
+
+    # Create demo video analysis (duration validation happens in worker)
+    analysis = await analysis_service.create_demo_video_analysis(
+        youtube_url=normalized_url,
+        video_id=video_id,
+        client_ip=client_ip,
+    )
+
+    return {
+        "data": {
+            "id": str(analysis.id),
+            "type": "demo_video_analysis",
+            "attributes": {
+                "status": analysis.status.value,
+                "progress": analysis.progress,
+                "current_stage": analysis.current_stage or "queued",
+                "created_at": analysis.created_at.isoformat(),
+            },
+            "links": {
+                "self": f"/v1/demo/analysis/{analysis.id}",
+            },
+        },
+    }
+
+
+@router.get("/demo/analysis/{analysis_id}", response_model=dict)
+async def get_demo_analysis(analysis_id: UUID):
+    """
+    Get the status and results of a demo analysis.
+
+    No authentication required. Only works for demo analyses.
+    """
+    analysis = await analysis_service.get_demo_analysis(analysis_id)
+
+    if not analysis:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "Analysis not found"},
+        )
+
+    response_data = {
+        "id": str(analysis.id),
+        "type": "demo_video_analysis",
+        "attributes": {
+            "status": analysis.status.value,
+            "progress": analysis.progress,
+            "current_stage": analysis.current_stage,
+            "created_at": analysis.created_at.isoformat(),
+            "updated_at": analysis.updated_at.isoformat(),
+        },
+    }
+
+    # Add results if completed
+    if analysis.status == AnalysisStatus.COMPLETED:
+        result = await analysis_service.get_analysis_result(analysis_id)
+        if result:
+            results_data = {
+                "verdict": result.verdict.value,
+                "confidence": result.confidence,
+                "risk_level": result.risk_level.value,
+                "summary": result.summary,
+                "ensemble_score": result.ensemble_score,
+            }
+            # Include frame results for video analysis
+            if result.video_analysis:
+                results_data["video_analysis"] = result.video_analysis
+            response_data["attributes"]["results"] = results_data
+        response_data["attributes"]["completed_at"] = (
+            analysis.processing_completed_at.isoformat()
+            if analysis.processing_completed_at
+            else None
+        )
+        response_data["attributes"]["processing_time_ms"] = analysis.processing_time_ms
+
+    # Add error info if failed
+    if analysis.status == AnalysisStatus.FAILED:
+        response_data["attributes"]["error"] = {
+            "code": analysis.error_code,
+            "message": analysis.error_message,
+        }
+
+    return {"data": response_data}

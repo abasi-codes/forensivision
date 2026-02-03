@@ -164,8 +164,10 @@ export function getStageProgress(stage: string | undefined, progress: number): n
     queued: [0, 5],
     downloading: [5, 20],
     extracting_frames: [20, 30],
+    extracting: [20, 30],
     analyzing: [30, 90],
     aggregating: [90, 95],
+    complete: [95, 100],
     completed: [100, 100],
   };
 
@@ -175,4 +177,168 @@ export function getStageProgress(stage: string | undefined, progress: number): n
   // Interpolate within the stage's range
   const [min, max] = range;
   return Math.min(max, Math.max(min, progress));
+}
+
+// ============================================================================
+// Demo Video Analysis API (No Auth Required)
+// ============================================================================
+
+export type DemoVideoStage =
+  | 'idle'
+  | 'submitting'
+  | 'downloading'
+  | 'extracting'
+  | 'analyzing'
+  | 'complete'
+  | 'error';
+
+export interface DemoVideoProgress {
+  stage: DemoVideoStage;
+  progress: number;
+  framesAnalyzed?: number;
+  totalFrames?: number;
+}
+
+export interface DemoVideoAnalysisResponse {
+  data: {
+    id: string;
+    type: 'demo_video_analysis';
+    attributes: {
+      status: 'pending' | 'processing' | 'completed' | 'failed';
+      progress: number;
+      current_stage?: string;
+      created_at: string;
+      updated_at: string;
+      completed_at?: string;
+      processing_time_ms?: number;
+      results?: {
+        verdict: string;
+        confidence: number;
+        risk_level: string;
+        summary: string;
+        ensemble_score?: number;
+        video_analysis?: VideoAnalysisData;
+      };
+      error?: {
+        code: string;
+        message: string;
+      };
+    };
+    links?: {
+      self: string;
+    };
+  };
+}
+
+export interface DemoSubmitResponse {
+  data: {
+    id: string;
+    type: 'demo_video_analysis';
+    attributes: {
+      status: string;
+      progress: number;
+      current_stage: string;
+      created_at: string;
+    };
+    links: {
+      self: string;
+    };
+  };
+}
+
+export async function submitDemoVideoAnalysis(
+  youtubeUrl: string
+): Promise<DemoSubmitResponse> {
+  const response = await fetch('/api/v1/demo/analyze/video', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ youtube_url: youtubeUrl }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new DemoAnalysisError(
+      error.detail?.code || 'UNKNOWN_ERROR',
+      error.detail?.message || 'Failed to submit video analysis',
+      error.detail?.retry_after_seconds
+    );
+  }
+
+  return response.json();
+}
+
+export async function getDemoAnalysisStatus(
+  analysisId: string
+): Promise<DemoVideoAnalysisResponse> {
+  const response = await fetch(`/api/v1/demo/analysis/${analysisId}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new DemoAnalysisError(
+      error.detail?.code || 'UNKNOWN_ERROR',
+      error.detail?.message || 'Failed to get analysis status'
+    );
+  }
+
+  return response.json();
+}
+
+export class DemoAnalysisError extends Error {
+  code: string;
+  retryAfterSeconds?: number;
+
+  constructor(code: string, message: string, retryAfterSeconds?: number) {
+    super(message);
+    this.name = 'DemoAnalysisError';
+    this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+export function getDemoStageLabel(stage: string | undefined): string {
+  const labels: Record<string, string> = {
+    idle: 'Ready',
+    submitting: 'Submitting...',
+    queued: 'Queued',
+    downloading: 'Downloading video...',
+    extracting: 'Extracting frames...',
+    analyzing: 'Analyzing frames...',
+    aggregating: 'Finishing up...',
+    complete: 'Complete',
+    completed: 'Complete',
+    error: 'Error',
+    failed: 'Failed',
+  };
+  return labels[stage || ''] || stage || 'Processing...';
+}
+
+export function mapBackendStageToDemoStage(
+  backendStage: string | undefined,
+  status: string
+): DemoVideoStage {
+  if (status === 'completed') return 'complete';
+  if (status === 'failed') return 'error';
+
+  switch (backendStage) {
+    case 'queued':
+    case 'downloading':
+      return 'downloading';
+    case 'extracting':
+    case 'extracting_frames':
+      return 'extracting';
+    case 'analyzing':
+      return 'analyzing';
+    case 'aggregating':
+    case 'complete':
+      return 'complete';
+    default:
+      return 'downloading';
+  }
 }

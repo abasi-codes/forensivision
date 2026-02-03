@@ -599,7 +599,7 @@ export default function AnalyzePage() {
                     />
                     <StageIndicator
                       label="Analyze"
-                      active={videoAnalysis.currentStage?.startsWith('analyzing')}
+                      active={videoAnalysis.currentStage?.startsWith('analyzing') ?? false}
                       complete={videoAnalysis.progress > 90}
                     />
                     <StageIndicator

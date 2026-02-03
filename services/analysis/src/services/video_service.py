@@ -30,6 +30,7 @@ class VideoService:
 
     # Limits
     MAX_DURATION_SECONDS = 300  # 5 minutes
+    DEMO_MAX_DURATION_SECONDS = 20  # 20 seconds for demo
     MAX_FILE_SIZE_MB = 500
     MAX_RESOLUTION = 720  # 720p
 
@@ -91,7 +92,7 @@ class VideoService:
         """Construct a standard YouTube URL from a video ID."""
         return f"https://www.youtube.com/watch?v={video_id}"
 
-    def get_download_options(self) -> dict:
+    def get_download_options(self, demo: bool = False) -> dict:
         """Get yt-dlp download options for safe downloading."""
         return {
             "format": f"best[height<={self.MAX_RESOLUTION}][filesize<{self.MAX_FILE_SIZE_MB}M]/best[height<={self.MAX_RESOLUTION}]",
@@ -102,6 +103,31 @@ class VideoService:
             "no_warnings": True,
             "extract_flat": False,
         }
+
+    def validate_duration(self, duration_seconds: float, demo: bool = False) -> None:
+        """
+        Validate video duration against limits.
+
+        Args:
+            duration_seconds: The video duration in seconds.
+            demo: Whether this is a demo analysis (stricter limits).
+
+        Raises:
+            VideoValidationError: If duration exceeds the limit.
+        """
+        max_duration = self.DEMO_MAX_DURATION_SECONDS if demo else self.MAX_DURATION_SECONDS
+
+        if duration_seconds > max_duration:
+            if demo:
+                raise VideoValidationError(
+                    code="VIDEO_TOO_LONG",
+                    message=f"Video must be {max_duration} seconds or less",
+                )
+            else:
+                raise VideoValidationError(
+                    code="VIDEO_TOO_LONG",
+                    message=f"Video exceeds maximum duration of {max_duration // 60} minutes",
+                )
 
 
 # Singleton instance

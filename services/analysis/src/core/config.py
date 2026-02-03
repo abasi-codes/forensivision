@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     # Queue names
     queue_image_analysis: str = "analysis.image"
     queue_video_analysis: str = "analysis.video"
+    queue_video_demo: str = "analysis.video.demo"
     queue_audio_analysis: str = "analysis.audio"
     queue_batch_analysis: str = "analysis.batch"
 

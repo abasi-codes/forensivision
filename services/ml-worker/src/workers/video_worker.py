@@ -3,6 +3,9 @@
 import asyncio
 import json
 import logging
+import os
+import shutil
+import tempfile
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -16,6 +19,10 @@ from src.video.downloader import VideoDownloader, DownloadError, VideoInfo
 from src.video.frame_extractor import FrameExtractor, ExtractedFrame
 
 logger = logging.getLogger(__name__)
+
+# Demo constraints
+DEMO_MAX_DURATION = 20  # seconds
+DEMO_MAX_FRAMES = 20  # 1 fps for 20 seconds max
 
 
 @dataclass
@@ -35,6 +42,12 @@ class SuspiciousSegment:
     start: float
     end: float
     avg_ai_probability: float
+
+
+class DemoVideoDownloader(VideoDownloader):
+    """Video downloader with demo-specific constraints."""
+
+    MAX_DURATION_SECONDS = DEMO_MAX_DURATION
 
 
 class VideoWorker:
@@ -59,6 +72,7 @@ class VideoWorker:
         self.db = db
         self.image_detector = image_detector
         self.downloader = VideoDownloader()
+        self.demo_downloader = DemoVideoDownloader()
         self.frame_extractor = FrameExtractor(frames_per_second=1)
 
     async def process_job(self, message: IncomingMessage) -> None:
@@ -134,6 +148,126 @@ class VideoWorker:
                 # Cleanup video file
                 if video_path:
                     self.downloader.cleanup(video_path)
+
+    async def process_demo_job(self, message: IncomingMessage) -> None:
+        """
+        Process a demo video analysis job with stricter constraints.
+
+        Demo jobs have:
+        - 20 second max duration
+        - More aggressive temp file cleanup
+        - No webhook notifications
+
+        Args:
+            message: The incoming RabbitMQ message.
+        """
+        async with message.process():
+            video_path: Optional[str] = None
+            temp_dir: Optional[str] = None
+
+            try:
+                job = json.loads(message.body.decode())
+                analysis_id = job["analysis_id"]
+                file_key = job["file_key"]  # YouTube URL
+                options = job.get("options", {})
+
+                logger.info(f"Processing demo video analysis job: {analysis_id}")
+
+                # Create isolated temp directory for demo
+                temp_dir = tempfile.mkdtemp(prefix="demo_video_")
+
+                # Update status to downloading
+                await self._update_status(analysis_id, "processing", 5, "downloading")
+
+                # Download video with demo constraints (20s max)
+                video_info = await self._download_demo_video(analysis_id, file_key, temp_dir)
+                video_path = video_info.file_path
+
+                # Update file info in database
+                await self._update_file_info(analysis_id, video_info)
+
+                # Extract frames (1 fps, max 20 frames for demo)
+                await self._update_status(analysis_id, "processing", 20, "extracting")
+                frames = await self._extract_demo_frames(analysis_id, video_path)
+
+                # Analyze frames
+                await self._update_status(analysis_id, "processing", 30, "analyzing")
+                frame_results = await self._analyze_frames(analysis_id, frames, options)
+
+                # Aggregate results
+                await self._update_status(analysis_id, "processing", 90, "complete")
+                await self._aggregate_and_store_results(
+                    analysis_id, video_info, frame_results
+                )
+
+                # Mark as completed
+                await self._update_status(analysis_id, "completed", 100, None)
+                logger.info(f"Completed demo video analysis: {analysis_id}")
+
+            except DownloadError as e:
+                logger.error(f"Demo download error for job: {e.code} - {e.message}")
+                await self._update_status(
+                    job.get("analysis_id"),
+                    "failed",
+                    0,
+                    None,
+                    error_code=e.code,
+                    error_message=e.message,
+                )
+            except Exception as e:
+                logger.error(f"Failed to process demo video job: {e}", exc_info=True)
+                try:
+                    await self._update_status(
+                        job.get("analysis_id"),
+                        "failed",
+                        0,
+                        None,
+                        error_code="PROCESSING_ERROR",
+                        error_message=str(e),
+                    )
+                except Exception:
+                    pass
+            finally:
+                # Aggressive cleanup for demo - remove entire temp directory
+                if temp_dir and os.path.exists(temp_dir):
+                    try:
+                        shutil.rmtree(temp_dir)
+                        logger.info(f"Cleaned up demo temp directory: {temp_dir}")
+                    except Exception as e:
+                        logger.warning(f"Failed to cleanup demo temp dir {temp_dir}: {e}")
+
+    async def _download_demo_video(
+        self, analysis_id: str, youtube_url: str, temp_dir: str
+    ) -> VideoInfo:
+        """Download video with demo constraints (20s max)."""
+        # Create a downloader with demo-specific temp dir
+        demo_downloader = DemoVideoDownloader(temp_dir=temp_dir)
+
+        async def progress_callback(progress: int):
+            # Map download progress to 5-20% range
+            mapped_progress = 5 + int(progress * 0.15)
+            await self._update_status(
+                analysis_id, "processing", mapped_progress, "downloading"
+            )
+
+        return await demo_downloader.download(youtube_url, progress_callback)
+
+    async def _extract_demo_frames(
+        self, analysis_id: str, video_path: str
+    ) -> List[ExtractedFrame]:
+        """Extract frames with demo constraints (max 20 frames)."""
+        async def progress_callback(progress: int):
+            # Map extraction progress to 20-30% range
+            mapped_progress = 20 + int(progress * 0.1)
+            await self._update_status(
+                analysis_id, "processing", mapped_progress, "extracting"
+            )
+
+        return await self.frame_extractor.extract(
+            video_path,
+            max_frames=DEMO_MAX_FRAMES,
+            progress_callback=progress_callback,
+        )
 
     async def _download_video(self, analysis_id: str, youtube_url: str) -> VideoInfo:
         """Download the YouTube video."""
@@ -389,7 +523,7 @@ class VideoWorker:
         await self.db.execute(
             """
             UPDATE analyses
-            SET status = $2, progress = $3, current_stage = $4,
+            SET status = $2::analysis_status, progress = $3, current_stage = $4,
                 error_code = $5, error_message = $6,
                 processing_started_at = CASE WHEN $2 = 'processing' AND processing_started_at IS NULL THEN NOW() ELSE processing_started_at END,
                 processing_completed_at = CASE WHEN $2 IN ('completed', 'failed') THEN NOW() ELSE processing_completed_at END,
@@ -462,16 +596,5 @@ class VideoWorker:
             summary,
             json.dumps(detections),
             confidence,
-            json.dumps(video_analysis),
-        )
-
-        # Also update the analyses table with video_analysis
-        await self.db.execute(
-            """
-            UPDATE analyses
-            SET video_analysis = $2, updated_at = NOW()
-            WHERE id = $1
-            """,
-            analysis_id,
             json.dumps(video_analysis),
         )

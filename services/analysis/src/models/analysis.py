@@ -79,6 +79,11 @@ class VideoAnalysisRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class DemoVideoAnalysisRequest(BaseModel):
+    """Request model for demo video analysis (no auth required)."""
+    youtube_url: str
+
+
 class BatchItem(BaseModel):
     id: str
     type: AnalysisType

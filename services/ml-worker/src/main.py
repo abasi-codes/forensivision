@@ -56,6 +56,7 @@ class MLWorker:
         # Start consuming from queues
         await self._consume_queue(settings.queue_image_analysis, self._process_image_job)
         await self._consume_queue(settings.queue_video_analysis, self._process_video_job)
+        await self._consume_queue(settings.queue_video_demo, self._process_demo_video_job)
 
         logger.info(f"ML Worker {settings.worker_id} started successfully")
 
@@ -150,6 +151,10 @@ class MLWorker:
     async def _process_video_job(self, message: IncomingMessage):
         """Process a video analysis job."""
         await self.video_worker.process_job(message)
+
+    async def _process_demo_video_job(self, message: IncomingMessage):
+        """Process a demo video analysis job with stricter constraints."""
+        await self.video_worker.process_demo_job(message)
 
     async def _update_status(
         self,

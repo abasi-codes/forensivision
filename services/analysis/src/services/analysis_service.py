@@ -20,6 +20,13 @@ from src.models.analysis import (
 
 logger = logging.getLogger(__name__)
 
+# Demo user ID for unauthenticated demo requests
+DEMO_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
+
+# Demo constraints
+DEMO_MAX_DURATION = 20  # seconds
+DEMO_RESULT_TTL = 3600  # 1 hour in seconds
+
 
 class AnalysisService:
     """Service for managing analysis jobs."""
@@ -138,6 +145,108 @@ class AnalysisService:
         await self._publish_analysis_job(analysis, settings.queue_video_analysis)
 
         return analysis
+
+    async def create_demo_video_analysis(
+        self,
+        youtube_url: str,
+        video_id: str,
+        client_ip: str,
+    ) -> AnalysisDB:
+        """
+        Create a demo video analysis job (no auth required).
+
+        Uses DEMO_USER_ID and publishes to the demo queue.
+        Duration validation happens in the worker.
+        """
+        analysis_id = uuid4()
+        now = datetime.utcnow()
+
+        source = {
+            "type": "youtube",
+            "url": youtube_url,
+            "video_id": video_id,
+        }
+
+        metadata = {
+            "demo": True,
+            "client_ip": client_ip,
+            "max_duration": DEMO_MAX_DURATION,
+        }
+
+        db = await get_db()
+        row = await db.fetchrow(
+            """
+            INSERT INTO analyses (
+                id, user_id, organization_id, type, status, priority,
+                file_key, options, webhook_url, external_id,
+                metadata, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            RETURNING *
+            """,
+            analysis_id,
+            DEMO_USER_ID,
+            None,  # No organization for demo
+            AnalysisType.VIDEO.value,
+            AnalysisStatus.PENDING.value,
+            5,  # Normal priority
+            youtube_url,
+            json.dumps({"demo": True, "max_duration": DEMO_MAX_DURATION}),
+            None,  # No webhook for demo
+            None,
+            json.dumps(metadata),
+            now,
+            now,
+        )
+
+        analysis = self._row_to_analysis(row)
+
+        # Publish to demo video queue
+        await self._publish_demo_analysis_job(analysis)
+
+        # Set TTL for auto-cleanup in Redis
+        redis = await get_redis()
+        await redis.setex(
+            f"demo_analysis:{analysis_id}",
+            DEMO_RESULT_TTL,
+            "1",
+        )
+
+        logger.info(f"Created demo video analysis {analysis_id} for IP {client_ip}")
+        return analysis
+
+    async def get_demo_analysis(self, analysis_id: UUID) -> Optional[AnalysisDB]:
+        """Get a demo analysis by ID (no user_id check, but must be demo user)."""
+        db = await get_db()
+        row = await db.fetchrow(
+            """
+            SELECT * FROM analyses WHERE id = $1 AND user_id = $2
+            """,
+            analysis_id,
+            DEMO_USER_ID,
+        )
+
+        if not row:
+            return None
+
+        return self._row_to_analysis(row)
+
+    async def _publish_demo_analysis_job(self, analysis: AnalysisDB) -> None:
+        """Publish demo analysis job to the demo queue."""
+        message = json.dumps(
+            {
+                "analysis_id": str(analysis.id),
+                "user_id": str(analysis.user_id),
+                "organization_id": None,
+                "type": analysis.type.value,
+                "file_key": analysis.file_key,
+                "options": analysis.options,
+                "demo": True,
+                "max_duration": DEMO_MAX_DURATION,
+            }
+        )
+
+        await publish_message(settings.queue_video_demo, message.encode(), priority=5)
+        logger.info(f"Published demo analysis job {analysis.id} to {settings.queue_video_demo}")
 
     async def create_batch_analysis(
         self,
