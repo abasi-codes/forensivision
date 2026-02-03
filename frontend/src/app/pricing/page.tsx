@@ -201,7 +201,7 @@ function PricingCard({
             <span className="text-muted-foreground">/month</span>
           </div>
         )}
-        {billingPeriod === 'annual' && !isCustom && price > 0 && (
+        {billingPeriod === 'annual' && !isCustom && price > 0 && tier.price.monthly !== null && tier.price.annual !== null && (
           <p className="mt-1 text-sm text-green-600 dark:text-green-400">
             Save ${(tier.price.monthly - tier.price.annual) * 12}/year
           </p>
