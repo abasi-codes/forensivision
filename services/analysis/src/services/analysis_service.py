@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
@@ -6,7 +7,6 @@ from uuid import UUID, uuid4
 
 from src.core.config import settings
 from src.core.database import get_db
-from src.core.rabbitmq import publish_message
 from src.core.redis import get_redis
 from src.models.analysis import (
     AnalysisDB,
@@ -200,9 +200,6 @@ class AnalysisService:
 
         analysis = self._row_to_analysis(row)
 
-        # Publish to demo video queue
-        await self._publish_demo_analysis_job(analysis)
-
         # Set TTL for auto-cleanup in Redis
         redis = await get_redis()
         await redis.setex(
@@ -212,6 +209,11 @@ class AnalysisService:
         )
 
         logger.info(f"Created demo video analysis {analysis_id} for IP {client_ip}")
+
+        # Process video synchronously in background task
+        from src.services.video_analyzer import video_analyzer
+        asyncio.create_task(video_analyzer.analyze_demo_video(analysis_id, youtube_url))
+
         return analysis
 
     async def get_demo_analysis(self, analysis_id: UUID) -> Optional[AnalysisDB]:
@@ -230,23 +232,6 @@ class AnalysisService:
 
         return self._row_to_analysis(row)
 
-    async def _publish_demo_analysis_job(self, analysis: AnalysisDB) -> None:
-        """Publish demo analysis job to the demo queue."""
-        message = json.dumps(
-            {
-                "analysis_id": str(analysis.id),
-                "user_id": str(analysis.user_id),
-                "organization_id": None,
-                "type": analysis.type.value,
-                "file_key": analysis.file_key,
-                "options": analysis.options,
-                "demo": True,
-                "max_duration": DEMO_MAX_DURATION,
-            }
-        )
-
-        await publish_message(settings.queue_video_demo, message.encode(), priority=5)
-        logger.info(f"Published demo analysis job {analysis.id} to {settings.queue_video_demo}")
 
     async def create_batch_analysis(
         self,
@@ -301,17 +286,21 @@ class AnalysisService:
                 now,
             )
 
-        # Publish batch job to queue
-        message = json.dumps(
-            {
-                "batch_id": str(batch_id),
-                "user_id": str(user_id),
-                "organization_id": str(organization_id) if organization_id else None,
-                "items": items,
-                "options": options,
-            }
-        )
-        await publish_message(settings.queue_batch_analysis, message.encode(), priority=5)
+        # Publish batch job to queue (only if RabbitMQ is enabled)
+        if settings.use_rabbitmq:
+            from src.core.rabbitmq import publish_message
+            message = json.dumps(
+                {
+                    "batch_id": str(batch_id),
+                    "user_id": str(user_id),
+                    "organization_id": str(organization_id) if organization_id else None,
+                    "items": items,
+                    "options": options,
+                }
+            )
+            await publish_message(settings.queue_batch_analysis, message.encode(), priority=5)
+        else:
+            logger.warning("Batch analysis requires RabbitMQ - job queued but won't process")
 
         return BatchAnalysisResponse(
             id=batch_id,
@@ -472,7 +461,13 @@ class AnalysisService:
         analysis: AnalysisDB,
         queue: Optional[str] = None,
     ) -> None:
-        """Publish analysis job to message queue."""
+        """Publish analysis job to message queue (only if RabbitMQ is enabled)."""
+        if not settings.use_rabbitmq:
+            logger.warning(f"Analysis job {analysis.id} created but RabbitMQ disabled - won't process")
+            return
+
+        from src.core.rabbitmq import publish_message
+
         if queue is None:
             queue = settings.queue_image_analysis
 

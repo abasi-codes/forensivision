@@ -17,8 +17,9 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379"
 
-    # RabbitMQ
-    rabbitmq_url: str = "amqp://forensivision:forensivision_dev@localhost:5672/"
+    # RabbitMQ (optional - set to empty string or use_rabbitmq=false to disable)
+    rabbitmq_url: str = ""
+    use_rabbitmq: bool = False
 
     # S3/MinIO
     s3_endpoint: str = "http://localhost:9000"

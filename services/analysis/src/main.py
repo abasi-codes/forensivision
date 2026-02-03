@@ -8,7 +8,6 @@ from src.api.routes import router
 from src.core.config import settings
 from src.core.database import init_db, close_db
 from src.core.redis import init_redis, close_redis
-from src.core.rabbitmq import init_rabbitmq, close_rabbitmq
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,7 +24,15 @@ async def lifespan(app: FastAPI):
     # Initialize connections
     await init_db()
     await init_redis()
-    await init_rabbitmq()
+
+    # RabbitMQ is optional - only init if configured
+    if settings.rabbitmq_url and settings.use_rabbitmq:
+        try:
+            from src.core.rabbitmq import init_rabbitmq
+            await init_rabbitmq()
+            logger.info("RabbitMQ initialized")
+        except Exception as e:
+            logger.warning(f"RabbitMQ not available, using sync mode: {e}")
 
     logger.info("Analysis Service started successfully")
 
@@ -33,7 +40,12 @@ async def lifespan(app: FastAPI):
 
     # Cleanup
     logger.info("Shutting down Analysis Service...")
-    await close_rabbitmq()
+    if settings.rabbitmq_url and settings.use_rabbitmq:
+        try:
+            from src.core.rabbitmq import close_rabbitmq
+            await close_rabbitmq()
+        except Exception:
+            pass
     await close_redis()
     await close_db()
     logger.info("Analysis Service shutdown complete")
