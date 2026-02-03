@@ -408,9 +408,9 @@ export function QuickUpload() {
             First-time setup (~15-20MB download)
           </p>
           <div className="max-w-xs mx-auto">
-            <Progress value={detectorStatus.loadProgress} className="h-2" />
+            <Progress value={Math.min(detectorStatus.loadProgress, 100)} className="h-2" />
             <p className="text-xs text-muted-foreground mt-1">
-              {detectorStatus.loadProgress}%
+              {Math.min(detectorStatus.loadProgress, 100)}%
             </p>
           </div>
         </div>
